@@ -82,7 +82,6 @@ def prune_resnet18_conv_layer(model, layer_index, filter_index):
 		if pt==1:
 			conv = model.features._modules.items()[3+tt][1][kt].conv1
 			next_conv =  model.features._modules.items()[3+tt][1][kt].conv2
-			#downout_conv =  model.features._modules.items()[3+tt][1][0].downsample[0]
 		else:
 			if kt==0:				
 				conv = model.features._modules.items()[3+tt][1][kt].conv2
