@@ -1,5 +1,5 @@
 # channel_prune
-base to channel pruned to ResNet18 model
+Base to channel pruned to ResNet18 model
 
 PyTorch implementation
 
