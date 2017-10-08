@@ -26,4 +26,6 @@ This is inefficient since allocating new layers, especially fully connected laye
 
 In principle this can be done in a single pass.
 
+torch version:0.1.12_2 (recommendation)
+
 this project modified from https://github.com/jacobgil/pytorch-pruning.
