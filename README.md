@@ -29,3 +29,5 @@ In principle this can be done in a single pass.
 torch version:0.1.12_2 (recommendation)
 
 this project modified from https://github.com/jacobgil/pytorch-pruning.
+
+For details, see csdn: http://blog.csdn.net/yyqq7226741/article/details/78301231
