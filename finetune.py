@@ -348,7 +348,8 @@ if __name__ == '__main__':
 		model = ModifiedResNet18Model().cuda()
 	elif args.prune:
 		model = torch.load('model_18').cuda()
-	print model
+	if args.train or args.prune:
+		print model
 	fine_tuner = PrunningFineTuner_ResNet18(args.train_path, args.test_path, model)
 
 	if args.train:
