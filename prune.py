@@ -269,5 +269,5 @@ if __name__ == '__main__':
 	model.train()
 
 	t0 = time.time()
-	model = prune_conv_layer(model, 28, 10)
+	model = prune_resnet18_conv_layer(model, 28, 10)
 	print "The prunning took", time.time() - t0
