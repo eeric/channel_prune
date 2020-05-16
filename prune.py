@@ -13,6 +13,9 @@ def replace_layers(model, i, indexes, layers):
 
 def prune_resnet18_conv_layer(model, layer_index, filter_index):
     
+    print("layer_index: ", layer_index)
+    print("filter_index: ", filter_index)
+    
     next_conv = None
     next_new_conv = None
     downin_conv = None
@@ -22,7 +25,10 @@ def prune_resnet18_conv_layer(model, layer_index, filter_index):
     if layer_index == 0:
         _, conv = model.features._modules.items()[layer_index]
         next_conv =  model.features._modules.items()[4][1][0].conv1
-
+    
+    if layer_index%2 == 0:
+        return model
+    
     if layer_index > 0 and layer_index < 5:
                 tt=1
                 kt=layer_index//3
@@ -36,8 +42,8 @@ def prune_resnet18_conv_layer(model, layer_index, filter_index):
                                 next_conv =  model.features._modules.items()[3+tt][1][kt+1].conv1
                         else:
                                 conv = model.features._modules.items()[3+tt][1][kt].conv2
-                next_conv =  model.features._modules.items()[3+tt+1][1][0].conv1
-                downin_conv =  model.features._modules.items()[3+tt+1][1][0].downsample[0]
+                                next_conv =  model.features._modules.items()[3+tt+1][1][0].conv1
+                                downin_conv =  model.features._modules.items()[3+tt+1][1][0].downsample[0]
 
     elif layer_index > 4 and layer_index < 9:
                 tt=2
@@ -46,7 +52,7 @@ def prune_resnet18_conv_layer(model, layer_index, filter_index):
                 if pt==1:
                         conv = model.features._modules.items()[3+tt][1][kt].conv1
                         next_conv =  model.features._modules.items()[3+tt][1][kt].conv2
-            #downout_conv =  model.features._modules.items()[3+tt][1][0].downsample[0]
+                        #downout_conv =  model.features._modules.items()[3+tt][1][0].downsample[0]
                 else:
                         if kt==0:
                                 conv = model.features._modules.items()[3+tt][1][kt].conv2
@@ -64,7 +70,7 @@ def prune_resnet18_conv_layer(model, layer_index, filter_index):
                 if pt==1:
                         conv = model.features._modules.items()[3+tt][1][kt].conv1
                         next_conv =  model.features._modules.items()[3+tt][1][kt].conv2
-            #downout_conv =  model.features._modules.items()[3+tt][1][0].downsample[0]
+                        #downout_conv =  model.features._modules.items()[3+tt][1][0].downsample[0]
                 else:
                         if kt==0:
                                 conv = model.features._modules.items()[3+tt][1][kt].conv2
@@ -83,7 +89,7 @@ def prune_resnet18_conv_layer(model, layer_index, filter_index):
             conv = model.features._modules.items()[3+tt][1][kt].conv1
             next_conv =  model.features._modules.items()[3+tt][1][kt].conv2
         else:
-            if kt==0:				
+            if kt==0:
                 conv = model.features._modules.items()[3+tt][1][kt].conv2
                 next_conv =  model.features._modules.items()[3+tt][1][kt+1].conv1
                 downout_conv =  model.features._modules.items()[3+tt][1][kt].downsample[0]
@@ -91,12 +97,9 @@ def prune_resnet18_conv_layer(model, layer_index, filter_index):
                 conv = model.features._modules.items()[3+tt][1][kt].conv2
                 #next_conv =  model.features._modules.items()[5+1][1][0].conv1
 
-    #while layer_index + offset <  len(model.features._modules.items()):
-        #res =  model.features._modules.items()[layer_index+offset]
-        #if isinstance(res[1], torch.nn.modules.conv.Conv2d) or isinstance(res[1], torch.nn.BatchNorm2d):
-        #	next_name, next_conv = res
-        #	break
-        #offset = offset + 1
+    
+    if layer_index >= 17:
+        return model
     
     new_conv = \
         torch.nn.Conv2d(in_channels = conv.in_channels, \

@@ -12,6 +12,7 @@ from prune import *
 import argparse
 from operator import itemgetter
 from heapq import nsmallest
+from tqdm import tqdm
 import time
 
 
@@ -37,7 +38,7 @@ class ModifiedResNet18Model(torch.nn.Module):
             nn.Dropout(),
             nn.Linear(400,256),
             nn.ReLU(inplace=True),
-            nn.Linear(256, 100))
+            nn.Linear(256, 2))
         #modules = list(resnet.children())[:-1]      # delete the last fc layer.
         #resnet = nn.Sequential(*modules)
         #self.classifier = nn.Sequential(
@@ -77,69 +78,113 @@ class FilterPrunner:
         activation_index = 0
         kk = 0
         for layer, (name, module) in enumerate(self.model.features._modules.items()):
+#             print("name: ", layer, "kk: ", kk, "activation_index: ", activation_index)
 
             if layer < 4 or layer > 7 :
                 x = module(x)
-                if isinstance(module, torch.nn.modules.conv.Conv2d): #or isinstance(module, torch.nn.BatchNorm2d):
+                if isinstance(module, torch.nn.modules.
+                              conv.Conv2d): #or isinstance(module, torch.nn.BatchNorm2d):
                     x.register_hook(self.compute_rank)
                     self.activations.append(x)
                     self.activation_to_layer[activation_index] = kk
                     activation_index += 1
-                kk += 1
+                    kk += 1
             
             if layer==4 or layer==5 or layer==6 or layer==7:
-                for kt in range(2):
-                    x = self.model.features._modules.items()[layer][1][kt].conv1(x)
-                    x.register_hook(self.compute_rank)
-                    self.activations.append(x)
-                    self.activation_to_layer[activation_index] = kk
-                    activation_index += 1
+                if layer == 4:
                     
-                    kk += 1
-                    x = self.model.features._modules.items()[layer][1][kt].bn1(x)
-                    x = self.model.features._modules.items()[layer][1][kt].relu(x)
-                    x = self.model.features._modules.items()[layer][1][kt].conv2(x)
+                    prev = x
                     
-                    x.register_hook(self.compute_rank)
-                    self.activations.append(x)
-                    self.activation_to_layer[activation_index] = kk
-                    activation_index += 1
-                
-                    kk += 1
-                    x = self.model.features._modules.items()[layer][1][kt].bn2(x)
+                    for kt in range(2):
+                        x = self.model.features._modules.items()[layer][1][kt].conv1(x)
+                        x.register_hook(self.compute_rank)
+                        self.activations.append(x)
+                        self.activation_to_layer[activation_index] = kk
+                        activation_index += 1
 
+                        kk += 1
+                        x = self.model.features._modules.items()[layer][1][kt].bn1(x)
+                        x = self.model.features._modules.items()[layer][1][kt].relu(x)
+                        x = self.model.features._modules.items()[layer][1][kt].conv2(x)
+
+                        x.register_hook(self.compute_rank)
+                        self.activations.append(x)
+                        self.activation_to_layer[activation_index] = kk
+                        activation_index += 1
+
+                        kk += 1
+                        x = self.model.features._modules.items()[layer][1][kt].bn2(x)
+                        x = x + prev
+                        
+                        prev = x
+                        
+                else:
+                    
+                    prev = x
+                    
+                    for kt in range(2):
+                        
+                        if kt == 0:
+                            prev = self.model.features._modules.items()[layer][1][kt].downsample(prev)
+                        
+                        x = self.model.features._modules.items()[layer][1][kt].conv1(x)
+                        x.register_hook(self.compute_rank)
+                        self.activations.append(x)
+                        self.activation_to_layer[activation_index] = kk
+                        activation_index += 1
+
+                        kk += 1
+                        x = self.model.features._modules.items()[layer][1][kt].bn1(x)
+                        x = self.model.features._modules.items()[layer][1][kt].relu(x)
+                        x = self.model.features._modules.items()[layer][1][kt].conv2(x)
+
+                        x.register_hook(self.compute_rank)
+                        self.activations.append(x)
+                        self.activation_to_layer[activation_index] = kk
+                        activation_index += 1
+
+                        kk += 1
+                        x = self.model.features._modules.items()[layer][1][kt].bn2(x)
+                        x = x + prev
+                        
+                        prev = x
+                    
         return self.model.fc(x.view(x.size(0), -1))
 
     def compute_rank(self, grad):
         activation_index = len(self.activations) - self.grad_index - 1
         activation = self.activations[activation_index]
-        values = \
-            torch.sum((activation * grad), dim = 0).\
-                sum(dim=2).sum(dim=3)[0, :, 0, 0].data
+        
+        taylor = activation * grad
+        taylor = taylor.mean(dim=(0,2,3)).data
         
         # Normalize the rank by the filter dimensions
-        values = \
-            values / (activation.size(0) * activation.size(2) * activation.size(3))
 
         if activation_index not in self.filter_ranks:
             self.filter_ranks[activation_index] = \
                 torch.FloatTensor(activation.size(1)).zero_().cuda()
 
-        self.filter_ranks[activation_index] += values
+        self.filter_ranks[activation_index] += taylor
         self.grad_index += 1
 
     def lowest_ranking_filters(self, num):
         data = []
+#         print("self.filter_ranks: ", self.filter_ranks)
         for i in sorted(self.filter_ranks.keys()):
             for j in range(self.filter_ranks[i].size(0)):
+#                 print("self.activation_to_layer[i]: ", i," ", self.activation_to_layer[i])
                 data.append((self.activation_to_layer[i], j, self.filter_ranks[i][j]))
 
         return nsmallest(num, data, itemgetter(2))
+    
+    
+    
+    
 
     def normalize_ranks_per_layer(self):
         for i in self.filter_ranks:
             v = torch.abs(self.filter_ranks[i])
-            v = v / np.sqrt(torch.sum(v * v))
+            v = v / torch.sqrt(torch.sum(v * v))
             self.filter_ranks[i] = v.cpu()
 
     def model_forward(self, x):
@@ -147,18 +192,42 @@ class FilterPrunner:
                     if layer < 4 or layer > 7 :
                         x = module(x)
                     else:
-                        for kt in range(2):
-                                x = self.model.features._modules.items()[layer][1][kt].conv1(x)
-                                x = self.model.features._modules.items()[layer][1][kt].bn1(x)
-                                x = self.model.features._modules.items()[layer][1][kt].relu(x)
-                                x = self.model.features._modules.items()[layer][1][kt].conv2(x)
-                                x = self.model.features._modules.items()[layer][1][kt].bn2(x)
+                        prev = x
+                        
+                        if layer == 4:
+                            for kt in range(2):
+                                    x = self.model.features._modules.items()[layer][1][kt].conv1(x)
+                                    x = self.model.features._modules.items()[layer][1][kt].bn1(x)
+                                    x = self.model.features._modules.items()[layer][1][kt].relu(x)
+                                    x = self.model.features._modules.items()[layer][1][kt].conv2(x)
+                                    x = self.model.features._modules.items()[layer][1][kt].bn2(x)
+                                    x += prev
+                                    prev = x
+                        else:
+                            
+                            for kt in range(2):
+                                
+                                    if kt == 0:
+                                        prev = self.model.features._modules.items()[layer][1][kt].downsample(prev)
+                                        
+                                    x = self.model.features._modules.items()[layer][1][kt].conv1(x)
+                                    x = self.model.features._modules.items()[layer][1][kt].bn1(x)
+                                    x = self.model.features._modules.items()[layer][1][kt].relu(x)
+                                    x = self.model.features._modules.items()[layer][1][kt].conv2(x)
+                                    x = self.model.features._modules.items()[layer][1][kt].bn2(x)
+                                    x += prev
+                                    prev = x
+                            
+                            
+                            
 
                 return self.model.fc(x.view(x.size(0), -1))
 
     def get_prunning_plan(self, num_filters_to_prune):
         filters_to_prune = self.lowest_ranking_filters(num_filters_to_prune)
-
+        
+#         print("filters_to_prune: ", filters_to_prune)
+        
         # After each of the k filters are prunned,
         # the filter index of the next filters change since the model is smaller.
         filters_to_prune_per_layer = {}
@@ -171,13 +240,15 @@ class FilterPrunner:
             filters_to_prune_per_layer[l] = sorted(filters_to_prune_per_layer[l])
             for i in range(len(filters_to_prune_per_layer[l])):
                 filters_to_prune_per_layer[l][i] = filters_to_prune_per_layer[l][i] - i
-
+        
+#         print("filters_to_prune_per_layer:, ", filters_to_prune_per_layer)
+        
         filters_to_prune = []
         for l in filters_to_prune_per_layer:
             for i in filters_to_prune_per_layer[l]:
                 filters_to_prune.append((l, i))
 
-        return filters_to_prune				
+        return filters_to_prune
 
 class PrunningFineTuner_ResNet18:
     def __init__(self, train_path, test_path, model):
@@ -195,7 +266,7 @@ class PrunningFineTuner_ResNet18:
         correct = 0
         total = 0
 
-        for i, (batch, label) in enumerate(self.test_data_loader):
+        for i, (batch, label) in tqdm(enumerate(self.train_data_loader)):
             batch = batch.cuda()
             indata = Variable(batch)
             output = self.prunner.model_forward(indata)
@@ -211,10 +282,10 @@ class PrunningFineTuner_ResNet18:
     def train(self, optimizer = None, epoches = 10):
         if optimizer is None:
             optimizer = \
-                optim.SGD(model.fc.parameters(), 
-                    lr=0.0001, momentum=0.9)
+                optim.SGD(model.parameters(), 
+                    lr=0.005, momentum=0.9)
 
-        for i in range(epoches):
+        for i in tqdm(range(epoches)):
             print ("Epoch: ", i)
             self.train_epoch(optimizer)
             self.test()
@@ -235,7 +306,7 @@ class PrunningFineTuner_ResNet18:
             optimizer.step()
 
     def train_epoch(self, optimizer = None, rank_filters = False):
-        for batch, label in self.train_data_loader:
+        for batch, label in tqdm(self.train_data_loader):
             self.train_batch(optimizer, batch.cuda(), label.cuda(), rank_filters)
 
     def get_candidates_to_prune(self, num_filters_to_prune):
@@ -283,7 +354,7 @@ class PrunningFineTuner_ResNet18:
         
     def prune(self):
         #Get the accuracy before prunning
-        self.test()
+#         self.test()
 
         self.model.train()
 
@@ -304,6 +375,8 @@ class PrunningFineTuner_ResNet18:
             print ("Ranking filters: ", _, "times ..")
             prune_targets = self.get_candidates_to_prune(num_filters_to_prune_per_iteration)
             layers_prunned = {}
+            
+            
             for layer_index, filter_index in prune_targets:
                 if layer_index not in layers_prunned:
                     layers_prunned[layer_index] = 0
@@ -312,6 +385,9 @@ class PrunningFineTuner_ResNet18:
             print ("Layers that will be prunned", layers_prunned)
             print ("Prunning filters.. ")
             model = self.model.cpu()
+            
+#             print("prune targets before loop: ", prune_targets)
+            
             for layer_index, filter_index in prune_targets:
                 #if layer_index ==14:
                     #print "pause.."
