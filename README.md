@@ -32,4 +32,3 @@ this project modified from https://github.com/jacobgil/pytorch-pruning.
 
 For details, see csdn: http://blog.csdn.net/yyqq7226741/article/details/78301231
 ## If I can help you, please give me a star :star2::star2::star2:
-[![ReadMe Card](https://github-readme-stats.vercel.app/api/pin/?username=eeric&repo=github-readme-stats)](https://github.com/eeric/github-readme-stats)
